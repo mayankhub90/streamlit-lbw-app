@@ -109,3 +109,7 @@ def shap_for_row(df_raw):
         expl = shap.KernelExplainer(predict_fn, bg, link="logit")
         vals = expl.shap_values(df_raw, nsamples=100)
         return np.array(vals).reshape(-1)
+
+import streamlit as st
+st.write("DEBUG: app start reached")
+st.experimental_set_query_params(debug="1")
