@@ -1,3 +1,39 @@
+# Put this at the very top of app.py (replace any debug prints you added)
+import streamlit as st
+import traceback, sys
+
+# Minimal visible header so we know wrapper loaded
+st.title("LBW App — debug wrapper active")
+
+try:
+    # === START OF YOUR ORIGINAL app.py CODE ===
+    # Paste all your original code (imports, loader, UI, handlers) here,
+    # starting immediately after this comment block. Do NOT include the
+    # try/except wrapper again inside your original code.
+    #
+    # Example:
+    # import joblib, pandas as pd, numpy as np, ...
+    # pipeline, background, load_error = load_pipeline_and_background()
+    # ... rest of your app ...
+    #
+    # === END OF YOUR ORIGINAL app.py CODE ===
+
+    pass  # remove this line when you paste your real code
+
+except Exception as e:
+    # Show the exception and full traceback in the Streamlit UI
+    st.error("App crashed during startup or rendering — full traceback below.")
+    tb = traceback.format_exc()
+    # show a short message and the full traceback
+    st.text(str(e))
+    st.text(tb)
+
+    # Also print to stdout for Streamlit logs (helpful)
+    print("APP EXCEPTION (printed for logs):", str(e))
+    print(tb)
+    # keep the app alive (so you can see error) — do not re-raise
+
+
 
 # ---------- artifact loader & predict (use cloudpickle preproc + xgb json) ----------
 import os, joblib, json, streamlit as st, numpy as np, pandas as pd
