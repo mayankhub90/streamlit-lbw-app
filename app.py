@@ -1,7 +1,3 @@
-import streamlit as st
-st.write("DEBUG: app start reached")
-st.experimental_set_query_params(debug="1")
-
 
 # ---------- artifact loader & predict (use cloudpickle preproc + xgb json) ----------
 import os, joblib, json, streamlit as st, numpy as np, pandas as pd
@@ -59,10 +55,6 @@ def load_artifacts():
         return None, None, None, "preproc load failed"
     return preproc, (booster, clf), (features, features_t, bg), None
 
-import streamlit as st
-st.write("DEBUG: app start reached")
-st.experimental_set_query_params(debug="1")
-
 preproc, model_objs, feat_info, load_err = load_artifacts()
 if load_err:
     st.error("Model load error: " + str(load_err))
@@ -109,7 +101,3 @@ def shap_for_row(df_raw):
         expl = shap.KernelExplainer(predict_fn, bg, link="logit")
         vals = expl.shap_values(df_raw, nsamples=100)
         return np.array(vals).reshape(-1)
-
-import streamlit as st
-st.write("DEBUG: app start reached")
-st.experimental_set_query_params(debug="1")
