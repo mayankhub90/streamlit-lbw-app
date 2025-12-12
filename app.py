@@ -1,37 +1,71 @@
-# app.py (loading helper)
-import os, joblib
-try:
-    import cloudpickle
-except Exception:
-    cloudpickle = None
+# ----- model loader with joblib + cloudpickle fallback -----
+import os
+import joblib
+import pandas as pd
+import traceback
+import streamlit as st
 
-MODEL_PATH = "model/pipeline.pkl"
+MODEL_PATH = os.path.join("model", "pipeline.pkl")
+BACKGROUND_PATH = os.path.join("model", "background.csv")
 
-def load_pipeline_safe(path=MODEL_PATH):
-    if not os.path.exists(path):
-        return None, "Model file not found"
-    # try joblib first
+def _try_joblib_load(path):
     try:
-        pl = joblib.load(path)
-        return pl, None
-    except Exception as e_job:
-        # try cloudpickle fallback if available
-        if cloudpickle is None:
-            try:
-                import pip, subprocess
-                subprocess.check_call(["pip", "install", "cloudpickle"])
-                import cloudpickle
-            except Exception:
-                return None, f"joblib.load failed: {e_job}\n(no cloudpickle available)"
-        try:
-            with open(path, "rb") as f:
-                pl = cloudpickle.load(f)
-            return pl, None
-        except Exception as e_cloud:
-            return None, f"joblib.load failed: {e_job}\ncloudpickle.load failed: {e_cloud}"
+        obj = joblib.load(path)
+        return obj, None
+    except Exception as e:
+        return None, f"joblib.load failed: {repr(e)}\n{traceback.format_exc()}"
 
-pipeline, background, load_error = None, None, None
-pipeline, background, load_error = load_pipeline_and_background()  # adapt to your function naming
+def _try_cloudpickle_load(path):
+    try:
+        import cloudpickle
+    except Exception as e:
+        return None, f"cloudpickle import failed: {repr(e)}"
+    try:
+        with open(path, "rb") as f:
+            obj = cloudpickle.load(f)
+        return obj, None
+    except Exception as e:
+        return None, f"cloudpickle.load failed: {repr(e)}\n{traceback.format_exc()}"
+
+@st.cache_resource
+def load_pipeline_and_background():
+    """
+    Returns (pipeline, background_df, error_msg).
+    pipeline is the loaded pipeline or None.
+    background_df is background DataFrame or None.
+    error_msg is None on success or text explaining failure.
+    """
+    # 1) Check file exists
+    if not os.path.exists(MODEL_PATH):
+        return None, None, f"Model file not found at {MODEL_PATH}"
+
+    # 2) Try joblib first
+    pipeline, err = _try_joblib_load(MODEL_PATH)
+    if pipeline is not None:
+        # load background if present
+        bg = None
+        if os.path.exists(BACKGROUND_PATH):
+            try:
+                bg = pd.read_csv(BACKGROUND_PATH)
+            except Exception as e:
+                return pipeline, None, f"Pipeline loaded but failed to load background.csv: {e}"
+        return pipeline, bg, None
+
+    # 3) Try cloudpickle fallback
+    pipeline, err_cloud = _try_cloudpickle_load(MODEL_PATH)
+    if pipeline is not None:
+        bg = None
+        if os.path.exists(BACKGROUND_PATH):
+            try:
+                bg = pd.read_csv(BACKGROUND_PATH)
+            except Exception as e:
+                return pipeline, None, f"Pipeline loaded via cloudpickle but failed to load background.csv: {e}"
+        return pipeline, bg, None
+
+    # 4) both failed — return composed error
+    composed = f"Both joblib and cloudpickle failed to load the pipeline.\nJoblib error:\n{err}\nCloudpickle error:\n{err_cloud}"
+    return None, None, composed
+
 
 # app.py
 import streamlit as st
@@ -218,3 +252,4 @@ if predict_btn:
             csv = contrib.to_csv(index=False).encode("utf-8")
 
             st.download_button("Download contributions CSV", csv, file_name="shap_contributions.csv")
+
