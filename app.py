@@ -1,3 +1,38 @@
+# app.py (loading helper)
+import os, joblib
+try:
+    import cloudpickle
+except Exception:
+    cloudpickle = None
+
+MODEL_PATH = "model/pipeline.pkl"
+
+def load_pipeline_safe(path=MODEL_PATH):
+    if not os.path.exists(path):
+        return None, "Model file not found"
+    # try joblib first
+    try:
+        pl = joblib.load(path)
+        return pl, None
+    except Exception as e_job:
+        # try cloudpickle fallback if available
+        if cloudpickle is None:
+            try:
+                import pip, subprocess
+                subprocess.check_call(["pip", "install", "cloudpickle"])
+                import cloudpickle
+            except Exception:
+                return None, f"joblib.load failed: {e_job}\n(no cloudpickle available)"
+        try:
+            with open(path, "rb") as f:
+                pl = cloudpickle.load(f)
+            return pl, None
+        except Exception as e_cloud:
+            return None, f"joblib.load failed: {e_job}\ncloudpickle.load failed: {e_cloud}"
+
+pipeline, background, load_error = None, None, None
+pipeline, background, load_error = load_pipeline_and_background()  # adapt to your function naming
+
 # app.py
 import streamlit as st
 import pandas as pd
@@ -181,4 +216,5 @@ if predict_btn:
             st.pyplot(fig)
 
             csv = contrib.to_csv(index=False).encode("utf-8")
+
             st.download_button("Download contributions CSV", csv, file_name="shap_contributions.csv")
