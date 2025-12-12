@@ -59,6 +59,10 @@ def load_artifacts():
         return None, None, None, "preproc load failed"
     return preproc, (booster, clf), (features, features_t, bg), None
 
+import streamlit as st
+st.write("DEBUG: app start reached")
+st.experimental_set_query_params(debug="1")
+
 preproc, model_objs, feat_info, load_err = load_artifacts()
 if load_err:
     st.error("Model load error: " + str(load_err))
