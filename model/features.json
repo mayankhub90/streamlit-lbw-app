@@ -1,3 +1,0 @@
-import json
-with open("features.json", "w") as f:
-    json.dump(list(X_train.columns), f)
