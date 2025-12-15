@@ -1,0 +1,5 @@
+import json
+
+# example: using your training dataframe X_train
+with open("features.json", "w") as f:
+    json.dump(list(X_train.columns), f, indent=2)
