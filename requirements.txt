@@ -1,9 +1,6 @@
-streamlit>=1.20
+streamlit
+xgboost
 pandas
 numpy
-scikit-learn==1.6.1
-xgboost==1.7.5
-joblib
-cloudpickle
-shap
 matplotlib
+shap
