@@ -16,6 +16,13 @@ st.title("Low Birth Weight (LBW) Risk Prediction")
 st.caption("XGBoost-based decision support tool")
 
 # ------------------------------------------------
+# RESET FORM (NEW USER)
+# ------------------------------------------------
+if st.button("New Beneficiary / Reset Form"):
+    st.session_state.clear()
+    st.rerun()
+
+# ------------------------------------------------
 # PATHS
 # ------------------------------------------------
 MODEL_DIR = "model"
@@ -25,7 +32,7 @@ FEATURES_PATH = os.path.join(MODEL_DIR, "features.json")
 BACKGROUND_PATH = os.path.join(MODEL_DIR, "background.csv")
 
 # ------------------------------------------------
-# LOAD ARTIFACTS (SAFE)
+# LOAD ARTIFACTS
 # ------------------------------------------------
 @st.cache_resource
 def load_artifacts():
@@ -72,6 +79,12 @@ def compute_registration_bucket(lmp, reg):
         return "On-time"
     else:
         return "Late"
+
+
+def compute_hb_risk_bin(tobacco, chew, alcohol):
+    if tobacco == "Yes" or chew == "Yes" or alcohol == "Yes":
+        return "High"
+    return "Low"
 
 
 def predict(df):
@@ -130,8 +143,15 @@ with st.expander("Health Behaviours"):
     inputs["Status of current chewing of tobacco"] = c2.selectbox("Chewing Tobacco", ["Yes", "No"])
     inputs["consume_alcohol"] = c1.selectbox("Consume Alcohol", ["Yes", "No"])
 
+# DERIVED HB RISK
+inputs["measured_HB_risk_bin"] = compute_hb_risk_bin(
+    inputs["consume_tobacco"],
+    inputs["Status of current chewing of tobacco"],
+    inputs["consume_alcohol"],
+)
+
 # ------------------------------------------------
-# NUTRITION (RAW → LOG1P)
+# NUTRITION (RAW → LOG)
 # ------------------------------------------------
 with st.expander("Nutrition"):
     c1, c2 = st.columns(2)
@@ -144,7 +164,7 @@ with st.expander("Nutrition"):
     inputs["No. of calcium tablets consumed in last one month_log1p"] = np.log1p(calcium_raw)
 
 # ------------------------------------------------
-# HOUSEHOLD & SES (RAW → LOG1P)
+# HOUSEHOLD & SES (RAW → LOG)
 # ------------------------------------------------
 with st.expander("Household & Socioeconomic Status"):
     c1, c2 = st.columns(2)
@@ -190,16 +210,13 @@ inputs["LMPtoINST2"] = np.nan
 inputs["LMPtoINST3"] = np.nan
 
 # ------------------------------------------------
-# BUILD FINAL DATAFRAME (CRITICAL FIX)
+# BUILD FINAL DATAFRAME (CRITICAL)
 # ------------------------------------------------
-row = {}
-for col in FEATURES:
-    row[col] = inputs.get(col, np.nan)
-
+row = {col: inputs.get(col, np.nan) for col in FEATURES}
 df = pd.DataFrame([row])
 
 # ------------------------------------------------
-# DEBUG – SHOW MISSING COLUMNS (REMOVE LATER)
+# DEBUG (REMOVE AFTER STABLE)
 # ------------------------------------------------
 expected = set(preproc.feature_names_in_)
 received = set(df.columns)
