@@ -9,22 +9,20 @@ import matplotlib.pyplot as plt
 from datetime import date
 
 # ------------------------------------------------
-# CONFIG
+# PAGE CONFIG
 # ------------------------------------------------
-st.set_page_config(
-    page_title="LBW Risk Prediction",
-    layout="wide"
-)
-
+st.set_page_config(page_title="LBW Risk Prediction", layout="wide")
 st.title("Low Birth Weight (LBW) Risk Prediction")
-st.caption("Model-based decision support tool")
+st.caption("XGBoost-based decision support tool")
 
+# ------------------------------------------------
+# PATHS
+# ------------------------------------------------
 MODEL_DIR = "model"
 PREPROC_PATH = os.path.join(MODEL_DIR, "preprocessor_cloud.pkl")
 BOOSTER_PATH = os.path.join(MODEL_DIR, "xgb_model.json")
 FEATURES_PATH = os.path.join(MODEL_DIR, "features.json")
 BACKGROUND_PATH = os.path.join(MODEL_DIR, "background.csv")
-
 
 # ------------------------------------------------
 # LOAD ARTIFACTS (SAFE)
@@ -61,9 +59,8 @@ if load_err:
     st.error(load_err)
     st.stop()
 
-
 # ------------------------------------------------
-# HELPERS
+# HELPER FUNCTIONS
 # ------------------------------------------------
 def compute_registration_bucket(lmp, reg):
     if lmp is None or reg is None:
@@ -75,10 +72,6 @@ def compute_registration_bucket(lmp, reg):
         return "On-time"
     else:
         return "Late"
-
-
-def safe_num(x):
-    return np.nan if x in ("", None) else x
 
 
 def predict(df):
@@ -111,12 +104,11 @@ with st.expander("Pregnancy Dates", expanded=True):
 registration_bucket = compute_registration_bucket(lmp_date, reg_date)
 st.info(f"Registration Bucket: **{registration_bucket}**")
 
-
-# ------------------------------------------------
-# FORM SECTIONS
-# ------------------------------------------------
 inputs = {}
 
+# ------------------------------------------------
+# PHYSIO & DEMOGRAPHIC
+# ------------------------------------------------
 with st.expander("Physiological & Demographic"):
     c1, c2 = st.columns(2)
     inputs["Beneficiary age"] = c1.number_input("Beneficiary age", 10, 60)
@@ -129,47 +121,67 @@ with st.expander("Physiological & Demographic"):
     inputs["BMI_PW3_Prog"] = c1.number_input("BMI PW3")
     inputs["BMI_PW4_Prog"] = c2.number_input("BMI PW4")
 
-
+# ------------------------------------------------
+# HEALTH BEHAVIOURS
+# ------------------------------------------------
 with st.expander("Health Behaviours"):
     c1, c2 = st.columns(2)
     inputs["consume_tobacco"] = c1.selectbox("Consume Tobacco", ["Yes", "No"])
     inputs["Status of current chewing of tobacco"] = c2.selectbox("Chewing Tobacco", ["Yes", "No"])
     inputs["consume_alcohol"] = c1.selectbox("Consume Alcohol", ["Yes", "No"])
 
-
+# ------------------------------------------------
+# NUTRITION (RAW → LOG1P)
+# ------------------------------------------------
 with st.expander("Nutrition"):
     c1, c2 = st.columns(2)
     inputs["Food_Groups_Category"] = c1.selectbox("Food Groups Category", [1, 2, 3, 4, 5])
-    inputs["No. of IFA tablets received/procured in last one month_log1p"] = c2.number_input("IFA tablets (log)")
-    inputs["No. of calcium tablets consumed in last one month_log1p"] = c1.number_input("Calcium tablets (log)")
 
+    ifa_raw = c2.number_input("IFA tablets received (last month)", min_value=0)
+    calcium_raw = c1.number_input("Calcium tablets consumed (last month)", min_value=0)
 
-with st.expander("Household & SES"):
+    inputs["No. of IFA tablets received/procured in last one month_log1p"] = np.log1p(ifa_raw)
+    inputs["No. of calcium tablets consumed in last one month_log1p"] = np.log1p(calcium_raw)
+
+# ------------------------------------------------
+# HOUSEHOLD & SES (RAW → LOG1P)
+# ------------------------------------------------
+with st.expander("Household & Socioeconomic Status"):
     c1, c2 = st.columns(2)
-    inputs["Household_Assets_Score_log1p"] = c1.number_input("Household Asset Score (log)")
+    asset_raw = c1.number_input("Household Asset Score", min_value=0)
+    inputs["Household_Assets_Score_log1p"] = np.log1p(asset_raw)
+
     inputs["toilet_type_clean"] = c2.selectbox("Toilet Available", ["Yes", "No"])
     inputs["water_source_clean"] = c1.selectbox("Safe Water Source", ["Yes", "No"])
     inputs["education_clean"] = c2.selectbox(
-        "Education",
-        ["Illiterate", "Primary", "Upper Primary", "Secondary",
-         "Senior Secondary", "Graduate", "Graduate and Above"]
+        "Education Level",
+        [
+            "Illiterate",
+            "Primary",
+            "Upper Primary",
+            "Secondary",
+            "Senior Secondary",
+            "Graduate",
+            "Graduate and Above",
+        ],
     )
 
-
-with st.expander("Programme & Services"):
+# ------------------------------------------------
+# PROGRAM & SERVICES
+# ------------------------------------------------
+with st.expander("Programme & Health Services"):
     c1, c2 = st.columns(2)
     inputs["No of ANCs completed"] = c1.number_input("ANCs Completed", 0, 10)
     inputs["Service received during last ANC: TT Injection given"] = c2.selectbox("TT Injection Given", ["Yes", "No"])
-    inputs["counselling_gap_days"] = c1.number_input("Counselling Gap Days")
+    inputs["counselling_gap_days"] = c1.number_input("Counselling Gap Days", min_value=0)
 
-    inputs["Registered for cash transfer scheme: JSY"] = c2.selectbox("JSY Registered", ["Yes", "No"])
-    inputs["Registered for cash transfer scheme: RAJHSRI"] = c1.selectbox("RAJHSRI Registered", ["Yes", "No"])
+    inputs["Registered for cash transfer scheme: JSY"] = c2.selectbox("Registered for JSY", ["Yes", "No"])
+    inputs["Registered for cash transfer scheme: RAJHSRI"] = c1.selectbox("Registered for RAJHSRI", ["Yes", "No"])
     inputs["PMMVY-Number of installment received"] = c2.number_input("PMMVY Installments", 0, 3)
     inputs["JSY-Number of installment received"] = c1.number_input("JSY Installments", 0, 2)
 
-
 # ------------------------------------------------
-# BUILD MODEL INPUT
+# DERIVED / ENGINEERED (ALWAYS PRESENT)
 # ------------------------------------------------
 inputs["RegistrationBucket"] = registration_bucket
 inputs["ANCBucket"] = np.nan
@@ -177,8 +189,25 @@ inputs["LMPtoINST1"] = np.nan
 inputs["LMPtoINST2"] = np.nan
 inputs["LMPtoINST3"] = np.nan
 
-df = pd.DataFrame([{k: inputs.get(k, np.nan) for k in FEATURES}])
+# ------------------------------------------------
+# BUILD FINAL DATAFRAME (CRITICAL FIX)
+# ------------------------------------------------
+row = {}
+for col in FEATURES:
+    row[col] = inputs.get(col, np.nan)
 
+df = pd.DataFrame([row])
+
+# ------------------------------------------------
+# DEBUG – SHOW MISSING COLUMNS (REMOVE LATER)
+# ------------------------------------------------
+expected = set(preproc.feature_names_in_)
+received = set(df.columns)
+missing = expected - received
+
+if missing:
+    st.error(f"Missing columns expected by model: {missing}")
+    st.stop()
 
 # ------------------------------------------------
 # PREDICTION
@@ -192,20 +221,20 @@ if st.button("Predict LBW Risk"):
     st.metric("LBW Probability", f"{prob:.3f}")
 
     if prob < 0.3:
-        st.success("Low Risk")
+        st.success("Low Risk of LBW")
     elif prob < 0.6:
-        st.warning("Moderate Risk")
+        st.warning("Moderate Risk of LBW")
     else:
-        st.error("High Risk")
+        st.error("High Risk of LBW")
 
-    # SHAP
+    # ---------------- SHAP ----------------
     st.subheader("Why this prediction?")
     shap_vals = compute_shap(df)
 
     shap_df = pd.DataFrame({
         "Feature": FEATURES,
-        "SHAP": shap_vals
-    }).sort_values("SHAP", key=abs, ascending=False)
+        "SHAP value": shap_vals
+    }).sort_values("SHAP value", key=abs, ascending=False)
 
     c1, c2 = st.columns(2)
 
@@ -218,5 +247,6 @@ if st.button("Predict LBW Risk"):
         st.dataframe(shap_df.tail(5))
 
     fig, ax = plt.subplots()
-    ax.barh(shap_df["Feature"][:10], shap_df["SHAP"][:10])
+    ax.barh(shap_df["Feature"][:10], shap_df["SHAP value"][:10])
+    ax.invert_yaxis()
     st.pyplot(fig)
