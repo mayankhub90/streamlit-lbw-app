@@ -33,10 +33,14 @@ BG_PATH = f"{MODEL_DIR}/background.csv"
 # ------------------------------
 # Load artifacts
 # ------------------------------
+import joblib
+
 @st.cache_resource
 def load_artifacts():
-    booster = xgb.Booster()
-    booster.load_model(MODEL_PATH)
+    model = joblib.load("model/xgb_mono.pkl")
+    FEATURES = json.load(open("model/features.json"))
+    BACKGROUND = pd.read_csv("model/background.csv")
+    return model, FEATURES, BACKGROUND
 
     FEATURES = json.load(open(FEATURES_PATH))
     BACKGROUND = pd.read_csv(BG_PATH)
@@ -190,14 +194,15 @@ if submit:
     df = df[FEATURES]
 
     dmat = xgb.DMatrix(df)
-    prob = booster.predict(dmat)[0]
+    prob = model.predict_proba(df)[0, 1]
+
 
     st.success(f"Predicted LBW Risk: **{prob:.2%}**")
 
     # ------------------------------
     # SHAP
     # ------------------------------
-    explainer = shap.TreeExplainer(booster)
+    explainer = shap.TreeExplainer(model)
     shap_vals = explainer.shap_values(df)
 
     shap_df = pd.DataFrame({
@@ -213,3 +218,4 @@ if submit:
             shap_df["SHAP value"].head(10)[::-1])
     ax.set_title("SHAP contributions")
     st.pyplot(fig)
+
