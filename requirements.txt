@@ -1,6 +1,8 @@
 streamlit
 xgboost
+scikit-learn
+joblib
+shap
 pandas
 numpy
 matplotlib
-shap
