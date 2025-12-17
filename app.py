@@ -1,3 +1,19 @@
+import os
+import streamlit as st
+
+st.write("📂 Current working directory:", os.getcwd())
+st.write("📁 Files in root:", os.listdir("."))
+
+if os.path.exists("XGBoost Model"):
+    st.write("📁 XGBoost Model contents:", os.listdir("XGBoost Model"))
+    if os.path.exists("XGBoost Model/artifacts"):
+        st.write(
+            "📁 artifacts contents:",
+            os.listdir("XGBoost Model/artifacts")
+        )
+
+
+
 # ============================================================
 # Streamlit LBW Risk App – Stable XGBoost (Python 3.13 Safe)
 # ============================================================
@@ -178,3 +194,4 @@ if submitted:
     except Exception as e:
         st.warning("SHAP explanation not available")
         st.text(str(e))
+
