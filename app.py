@@ -4,15 +4,18 @@ import numpy as np
 import joblib, json
 import shap
 import matplotlib.pyplot as plt
-from datetime import datetime
+from datetime import datetime, date
 
+# -----------------------------
+# Page config
+# -----------------------------
 st.set_page_config(
     page_title="LBW Risk Assessment",
     layout="wide"
 )
 
 # -----------------------------
-# Load artifacts (once)
+# Load artifacts (cached)
 # -----------------------------
 @st.cache_resource
 def load_artifacts():
@@ -24,10 +27,21 @@ def load_artifacts():
 model, FEATURES, BACKGROUND = load_artifacts()
 
 # -----------------------------
+# Categorical features (MUST match training)
+# -----------------------------
+CATEGORICAL_FEATURES = [
+    "Child order/parity",
+    "Food_Groups_Category",
+    "Social_Media_Category",
+    "RegistrationBucket",
+    "ANCBucket",
+]
+
+# -----------------------------
 # Helper functions
 # -----------------------------
 def bmi(weight, height_cm):
-    if height_cm <= 0:
+    if height_cm <= 0 or weight <= 0:
         return np.nan
     return weight / ((height_cm / 100) ** 2)
 
@@ -64,14 +78,14 @@ with st.form("lbw_form"):
     st.subheader("👩 Beneficiary Details")
     name = st.text_input("Beneficiary Name (for reference only)")
     age = st.number_input("Age (years)", 15, 49, 22)
-    height_cm = st.number_input("Height (cm)", 130, 190, 155)
+    height_cm = st.number_input("Height (cm)", 130, 200, 155)
 
     st.subheader("🧬 Clinical & Nutrition")
     hb = st.number_input("Hemoglobin (g/dL)", 4.0, 16.0, 10.5)
-    w1 = st.number_input("Weight PW1 (kg)", 30.0, 100.0, 45.0)
-    w2 = st.number_input("Weight PW2 (kg)", 30.0, 100.0, 48.0)
-    w3 = st.number_input("Weight PW3 (kg)", 30.0, 100.0, 50.0)
-    w4 = st.number_input("Weight PW4 (kg)", 30.0, 100.0, 52.0)
+    w1 = st.number_input("Weight PW1 (kg)", 30.0, 120.0, 45.0)
+    w2 = st.number_input("Weight PW2 (kg)", 30.0, 120.0, 48.0)
+    w3 = st.number_input("Weight PW3 (kg)", 30.0, 120.0, 50.0)
+    w4 = st.number_input("Weight PW4 (kg)", 30.0, 120.0, 52.0)
 
     st.subheader("🤰 Pregnancy & ANC")
     parity = st.number_input("Child order / parity", 0, 6, 1)
@@ -81,21 +95,13 @@ with st.form("lbw_form"):
     tt_given = st.selectbox("TT Injection given?", ["Yes", "No"])
 
     st.subheader("📅 Key Dates")
-    lmp = st.date_input("LMP Date")
+    lmp = st.date_input("LMP Date", value=None)
     inst1 = st.date_input("INST1 Date", value=None)
 
     st.subheader("🍎 Nutrition & Household")
     food_group = st.selectbox("Food Groups Category", [1, 2, 3, 4, 5])
     ifa = st.number_input("IFA tablets (last month)", 0, 120, 30)
     calcium = st.number_input("Calcium tablets (last month)", 0, 120, 30)
-
-    toilet = st.selectbox("Toilet type improved?", ["Yes", "No"])
-    water = st.selectbox("Clean water source?", ["Yes", "No"])
-    education = st.selectbox(
-        "Education",
-        ["Illiterate", "Primary", "Upper Primary", "Secondary",
-         "Senior Secondary", "Graduate", "Graduate and above"]
-    )
 
     st.subheader("💰 Schemes")
     jsy = st.selectbox("Registered for JSY?", ["Yes", "No"])
@@ -112,47 +118,76 @@ if submit:
 
     df = {}
 
+    # BMI
     df["BMI_PW1_Prog"] = bmi(w1, height_cm)
     df["BMI_PW2_Prog"] = bmi(w2, height_cm)
     df["BMI_PW3_Prog"] = bmi(w3, height_cm)
     df["BMI_PW4_Prog"] = bmi(w4, height_cm)
 
+    # Pregnancy & ANC
     df["Child order/parity"] = parity
     df["Number of living child at now"] = living_children
     df["No of ANCs completed"] = anc_count
     df["No of PC's total visit to PW"] = pc_visits
     df["Service received during last ANC: TT Injection given"] = int(tt_given == "Yes")
 
+    # Nutrition
     df["Food_Groups_Category"] = food_group
     df["No. of IFA tablets received/procured in last one month_log1p"] = log1p_safe(ifa)
     df["No. of calcium tablets consumed in last one month_log1p"] = log1p_safe(calcium)
 
+    # Schemes
     df["Registered for cash transfer scheme: JSY"] = int(jsy == "Yes")
     df["Registered for cash transfer scheme: RAJHSRI"] = int(raj == "Yes")
     df["JSY-Number of installment received"] = jsy_inst
     df["PMMVY-Number of installment received"] = pmmvy_inst
 
+    # Engineered features
     df["measured_HB_risk_score_m"] = hb_risk_score(hb)
     df["Beneficiary_age_band_m"] = age_band(age)
-
     df["LMPtoINST1_log1p_m"] = log1p_safe(days_between(lmp, inst1))
 
-    X = pd.DataFrame([df]).reindex(columns=FEATURES, fill_value=0)
+    # -----------------------------
+    # Build final DataFrame
+    # -----------------------------
+    X = pd.DataFrame([df])
 
+    # ensure all required columns exist
+    for col in FEATURES:
+        if col not in X.columns:
+            X[col] = np.nan
+
+    # exact order
+    X = X[FEATURES]
+
+    # enforce categorical dtype
+    for c in CATEGORICAL_FEATURES:
+        if c in X.columns:
+            X[c] = X[c].astype("category")
+
+    # -----------------------------
+    # Prediction
+    # -----------------------------
     prob = model.predict_proba(X)[0, 1]
 
     st.success(f"**LBW Risk Probability:** {prob:.2f}")
 
     # -----------------------------
-    # SHAP
+    # SHAP Explanation
     # -----------------------------
     explainer = shap.TreeExplainer(model)
     shap_vals = explainer.shap_values(X)
 
     shap_df = pd.DataFrame({
         "Feature": FEATURES,
-        "SHAP": shap_vals[0]
-    }).sort_values("SHAP", key=abs, ascending=False).head(10)
+        "SHAP value": shap_vals[0]
+    })
+
+    shap_df["abs"] = shap_df["SHAP value"].abs()
+    shap_df = shap_df.sort_values("abs", ascending=False).head(10)
 
     st.subheader("🔍 Top factors influencing this prediction")
-    st.dataframe(shap_df)
+    st.dataframe(
+        shap_df[["Feature", "SHAP value"]],
+        use_container_width=True
+    )
