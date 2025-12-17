@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 
 # -----------------------------
-# Streamlit config
+# Page config
 # -----------------------------
 st.set_page_config(
     page_title="LBW Risk Prediction (XGBoost)",
@@ -14,7 +14,6 @@ st.set_page_config(
 )
 
 st.title("🤰 Low Birth Weight (LBW) Risk Predictor")
-st.caption("XGBoost-based clinical risk scoring tool")
 
 # -----------------------------
 # Paths
@@ -22,92 +21,93 @@ st.caption("XGBoost-based clinical risk scoring tool")
 MODEL_DIR = "model"
 MODEL_PATH = os.path.join(MODEL_DIR, "xgb_model.pkl")
 FEATURES_PATH = os.path.join(MODEL_DIR, "features.json")
-BACKGROUND_PATH = os.path.join(MODEL_DIR, "background.csv")
 
 # -----------------------------
 # Load artifacts
 # -----------------------------
 @st.cache_resource
 def load_artifacts():
-    if not os.path.exists(MODEL_PATH):
-        raise FileNotFoundError("❌ model/xgb_model.pkl not found")
-
-    if not os.path.exists(FEATURES_PATH):
-        raise FileNotFoundError("❌ model/features.json not found")
-
     model = joblib.load(MODEL_PATH)
-
     with open(FEATURES_PATH, "r") as f:
         features = json.load(f)
-
-    bg = None
-    if os.path.exists(BACKGROUND_PATH):
-        bg = pd.read_csv(BACKGROUND_PATH)
-
-    return model, features, bg
-
+    return model, features
 
 try:
-    model, FEATURES, BACKGROUND = load_artifacts()
+    model, FEATURES = load_artifacts()
 except Exception as e:
-    st.error(f"Model load error: {e}")
+    st.error(f"❌ Failed to load model artifacts: {e}")
     st.stop()
 
 # -----------------------------
-# Reset state on reload (new user)
+# Reset state on reload
 # -----------------------------
-if "submitted" not in st.session_state:
-    st.session_state.submitted = False
+st.session_state.clear()
 
 # -----------------------------
-# Helper: safe numeric cast
+# Feature grouping (ONCE)
 # -----------------------------
-def safe_float(x):
-    try:
-        return float(x)
-    except Exception:
-        return np.nan
+GROUPS = {
+    "🧍 Background & Physiological": [],
+    "🚭 Tobacco & Alcohol": [],
+    "🥗 Nutrition & Supplements": [],
+    "🚽 Household & SES": [],
+    "🏥 ANC & Program": [],
+}
+
+for f in FEATURES:
+    fl = f.lower()
+    if any(k in fl for k in ["age", "bmi", "child", "month"]):
+        GROUPS["🧍 Background & Physiological"].append(f)
+    elif any(k in fl for k in ["tobacco", "alcohol"]):
+        GROUPS["🚭 Tobacco & Alcohol"].append(f)
+    elif any(k in fl for k in ["ifa", "calcium", "food"]):
+        GROUPS["🥗 Nutrition & Supplements"].append(f)
+    elif any(k in fl for k in ["toilet", "water", "education"]):
+        GROUPS["🚽 Household & SES"].append(f)
+    else:
+        GROUPS["🏥 ANC & Program"].append(f)
 
 # -----------------------------
-# UI: Beneficiary details
+# Inputs
 # -----------------------------
-st.subheader("🧍 Beneficiary Information")
+INPUTS = {}
 
-beneficiary_name = st.text_input(
-    "Beneficiary Name (for record only – not used in model)"
+st.subheader("Beneficiary details")
+st.text_input(
+    "Beneficiary Name (for record only, not used in model)",
+    key="beneficiary_name"
 )
 
 st.divider()
 
 # -----------------------------
-# Feature groups (ONLY model features)
+# Render widgets (ONCE)
 # -----------------------------
-INPUTS = {}
+for group_name, group_feats in GROUPS.items():
+    with st.expander(group_name, expanded=False):
+        for f in group_feats:
+            fl = f.lower()
+            key = f"input_{f}"  # ✅ unique key
 
-with st.expander("🩺 Background & Physiological"):
-    for f in FEATURES:
-        if any(k in f.lower() for k in ["age", "bmi", "child", "month"]):
-            INPUTS[f] = st.number_input(f, value=0.0)
-
-with st.expander("🚭 Tobacco & Alcohol"):
-    for f in FEATURES:
-        if "tobacco" in f.lower() or "alcohol" in f.lower():
-            INPUTS[f] = st.selectbox(f, ["Yes", "No"])
-
-with st.expander("🥗 Nutrition & Supplements"):
-    for f in FEATURES:
-        if "ifa" in f.lower() or "calcium" in f.lower() or "food" in f.lower():
-            INPUTS[f] = st.number_input(f, value=0.0)
-
-with st.expander("🚽 Household & SES"):
-    for f in FEATURES:
-        if "toilet" in f.lower() or "water" in f.lower() or "education" in f.lower():
-            INPUTS[f] = st.text_input(f)
-
-with st.expander("🏥 ANC & Program"):
-    for f in FEATURES:
-        if "anc" in f.lower() or "jsy" in f.lower() or "pmmvy" in f.lower():
-            INPUTS[f] = st.number_input(f, value=0.0)
+            if any(k in fl for k in ["yes", "no", "tobacco", "alcohol"]):
+                INPUTS[f] = st.selectbox(
+                    f,
+                    ["No", "Yes"],
+                    key=key
+                )
+            elif any(k in fl for k in ["category", "bucket"]):
+                INPUTS[f] = st.number_input(
+                    f,
+                    min_value=0,
+                    step=1,
+                    key=key
+                )
+            else:
+                INPUTS[f] = st.number_input(
+                    f,
+                    value=0.0,
+                    key=key
+                )
 
 # -----------------------------
 # Prepare dataframe
@@ -115,56 +115,40 @@ with st.expander("🏥 ANC & Program"):
 def build_input_df(inputs, feature_list):
     row = {}
     for f in feature_list:
-        val = inputs.get(f, np.nan)
+        v = inputs.get(f)
 
-        if isinstance(val, str):
-            if val.lower() == "yes":
-                row[f] = 1
-            elif val.lower() == "no":
-                row[f] = 0
-            else:
-                row[f] = val
+        if isinstance(v, str):
+            row[f] = 1 if v.lower() == "yes" else 0
         else:
-            row[f] = safe_float(val)
+            row[f] = float(v) if v is not None else np.nan
 
     return pd.DataFrame([row])
-
 
 # -----------------------------
 # Predict
 # -----------------------------
 st.divider()
 
-if st.button("🔍 Predict LBW Risk"):
-    st.session_state.submitted = True
-
+if st.button("🔍 Predict LBW Risk", use_container_width=True):
     df = build_input_df(INPUTS, FEATURES)
 
-    # Check missing columns
     missing = set(FEATURES) - set(df.columns)
     if missing:
         st.error(f"Missing columns expected by model: {missing}")
         st.stop()
 
     try:
-        proba = model.predict_proba(df)[0, 1]
+        prob = model.predict_proba(df)[0, 1]
     except Exception as e:
-        st.error(f"Prediction error: {e}")
+        st.error(f"Prediction failed: {e}")
         st.stop()
 
     st.success("✅ Prediction successful")
+    st.metric("Predicted LBW Risk Probability", f"{prob:.2%}")
 
-    st.metric(
-        label="Predicted LBW Risk Probability",
-        value=f"{proba:.2%}"
-    )
-
-    if proba >= 0.5:
+    if prob >= 0.5:
         st.error("⚠️ High risk of Low Birth Weight")
     else:
         st.success("🟢 Lower predicted risk")
 
-# -----------------------------
-# Footer
-# -----------------------------
 st.caption("Model: XGBoost | Deployment: Streamlit")
