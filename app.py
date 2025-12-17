@@ -47,7 +47,7 @@ st.session_state.clear()
 # Feature grouping (ONCE)
 # -----------------------------
 GROUPS = {
-    "🧍 Background & Physiological": [],
+    "🧍 Background": [],
     "🚭 Tobacco & Alcohol": [],
     "🥗 Nutrition & Supplements": [],
     "🚽 Household & SES": [],
@@ -152,3 +152,4 @@ if st.button("🔍 Predict LBW Risk", use_container_width=True):
         st.success("🟢 Lower predicted risk")
 
 st.caption("Model: XGBoost | Deployment: Streamlit")
+
