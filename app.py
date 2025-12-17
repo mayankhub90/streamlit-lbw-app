@@ -57,7 +57,7 @@ GROUPS = {
 for f in FEATURES:
     fl = f.lower()
     if any(k in fl for k in ["age", "bmi", "child", "month"]):
-        GROUPS["🧍 Background & Physiological"].append(f)
+        GROUPS["🧍 Background"].append(f)
     elif any(k in fl for k in ["tobacco", "alcohol"]):
         GROUPS["🚭 Tobacco & Alcohol"].append(f)
     elif any(k in fl for k in ["ifa", "calcium", "food"]):
@@ -152,4 +152,5 @@ if st.button("🔍 Predict LBW Risk", use_container_width=True):
         st.success("🟢 Lower predicted risk")
 
 st.caption("Model: XGBoost | Deployment: Streamlit")
+
 
